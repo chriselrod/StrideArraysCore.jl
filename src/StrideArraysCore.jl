@@ -1,13 +1,12 @@
 module StrideArraysCore
 
-using VectorizationBase, ArrayInterface, ThreadingUtilities
+using ArrayInterface, ThreadingUtilities
 using ArrayInterface: StaticInt, Zero, One, StaticBool, True, False,
-    OptionallyStaticUnitRange, size, strides, offsets, indices,
-    static_length, static_first, static_last, axes,
-    dense_dims, stride_rank
-using VectorizationBase: align, gep, AbstractStridedPointer, AbstractSIMDVector, vnoaliasstore!, staticm1,
-    static_sizeof, lazymul, vmul_fast, StridedPointer, gesp, zero_offsets, pause, zstridedpointer,
-    val_dense_dims, val_stride_rank, preserve_buffer
+  OptionallyStaticUnitRange, size, strides, offsets, indices,
+  static_length, static_first, static_last, axes,
+  dense_dims, stride_rank, offset1, StrideIndex,
+  contiguous_axis, contiguous_batch_size
+using ThreadingUtilities: load, store!
 
 export PtrArray, StrideArray, StaticInt
 

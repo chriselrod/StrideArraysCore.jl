@@ -4,26 +4,39 @@ abstract type AbstractPtrStrideArray{S,D,T,N,C,B,R,X,O} <: AbstractStrideArray{S
 const AbstractStrideVector{S,D,T,C,B,R,X,O} = AbstractStrideArray{S,D,T,1,C,B,R,X,O}
 const AbstractStrideMatrix{S,D,T,C,B,R,X,O} = AbstractStrideArray{S,D,T,2,C,B,R,X,O}
 
-struct PtrArray{S,D,T,N,C,B,R,X,O} <: AbstractPtrStrideArray{S,D,T,N,C,B,R,X,O}
-    ptr::StridedPointer{T,N,C,B,R,X,O}
-    size::S
+struct PtrArray{S<:Tuple{Vararg{Integer,N}},D,T,N,C,B,R,X<:Tuple{Vararg{Integer,N}},O<:Tuple{Vararg{Integer,N}}} <: AbstractPtrStrideArray{S,D,T,N,C,B,R,X,O}
+  ptr::Ptr{T}
+  strides::X
+  offsets::O
+  sizes::S
 end
-@inline function PtrArray(ptr::StridedPointer{T,N,C,B,R,X,O}, size::S, ::Val{D}) where {S,D,T,N,C,B,R,X,O}
-    PtrArray{S,D,T,N,C,B,R,X,O}(ptr, size)
-end
-
 const PtrVector{S,D,T,C,B,R,X,O} = PtrArray{S,D,T,1,C,B,R,X,O}
 const PtrMatrix{S,D,T,C,B,R,X,O} = PtrArray{S,D,T,2,C,B,R,X,O}
+@inline function PtrArray(A::AbstractArray{T,N}) where {T,N}
+  x = strides(A)
+  o = offsets(A)
+  s = size(A)
+  D = map(Bool, dense_dims(A))
+  R = map(Int, stride_rank(A))
+  C = contiguous_axis(A)
+  B = contiguous_batch_size(A)
+  PtrArray{typeof(s),D,T,N,C,B,R,typeof(x),typeof(o),typeof(o1)}(pointer(A), x, o, s)
+end
+@inline function PtrArray{D,C,B,R}(ptr::Ptr{T}, x::X, o::O, s::S) where {N,S<:Tuple{Vararg{Integer,N}},D,T,C,B,R,X<:Tuple{Vararg{Integer,N}},O<:Tuple{Vararg{Integer,N}}}
+  PtrArray{S,D,T,N,C,B,R,X,O}(ptr, x, o, s)
+end
+@inline function PtrArray(ptr::StridedPointer{T,N,C,B,R,X,O}, size::S, ::Val{D}) where {S,D,T,N,C,B,R,X,O}
+  PtrArray{S,D,T,N,C,B,R,X,O}(ptr, size)
+end
 
-@inline PtrArray(A::AbstractArray) = PtrArray(stridedpointer(A), size(A), val_dense_dims(A))
-
-@inline VectorizationBase.stridedpointer(A::PtrArray) = getfield(A, :ptr)
-@inline Base.pointer(A::AbstractStrideArray) = pointer(stridedpointer(A))
+@inline Base.pointer(A::PtrArray) = getfield(A, :ptr)
 @inline Base.unsafe_convert(::Type{Ptr{T}}, A::AbstractStrideArray) where {T} = Base.unsafe_convert(Ptr{T}, pointer(A))
 @inline Base.elsize(::AbstractStrideArray{<:Any,<:Any,T}) where {T} = sizeof(T)
 
 @inline ArrayInterface.size(A::PtrArray) = getfield(A, :size)
-@inline VectorizationBase.bytestrides(A::PtrArray) = getfield(getfield(A, :ptr), :strd)
+@inline ArrayInterface.strides(A::PtrArray) = getfield(A, :strides)
+@inline ArrayInterface.offsets(A::PtrArray) = getfield(A, :offsets)
+
 ArrayInterface.device(::AbstractStrideArray) = ArrayInterface.CPUPointer()
 
 ArrayInterface.contiguous_axis(::Type{<:AbstractStrideArray{S,D,T,N,C}}) where {S,D,T,N,C} = StaticInt{C}()
@@ -32,11 +45,11 @@ ArrayInterface.contiguous_batch_size(::Type{<:AbstractStrideArray{S,D,T,N,C,B}})
 static_expr(N::Int) = Expr(:call, Expr(:curly, :StaticInt, N))
 static_expr(b::Bool) = Expr(:call, b ? :True : :False)
 @generated function ArrayInterface.stride_rank(::Type{<:AbstractStrideArray{S,D,T,N,C,B,R}}) where {S,D,T,N,C,B,R}
-    t = Expr(:tuple)
-    for r ∈ R
-        push!(t.args, static_expr(r::Int))
-    end
-    t
+  t = Expr(:tuple)
+  for r ∈ R
+    push!(t.args, static_expr(r::Int))
+  end
+  t
 end
 @generated function ArrayInterface.dense_dims(::Type{<:AbstractStrideArray{S,D}}) where {S,D}
     t = Expr(:tuple)
@@ -97,20 +110,6 @@ end
 end
 @generated function ptrarray0(ptr::Ptr{T}, s::Tuple{Vararg{Integer,N}}) where {T,N}
     ptrarray_densestride_quote(T, N, :default_zerobased_stridedpointer)
-end
-
-@generated function ArrayInterface.strides(A::PtrArray{S,D,T,N}) where {S,D,T,N}
-  size_T = Base.allocatedinline(T) ? sizeof(T) : sizeof(Int)
-  shifter = static_expr(VectorizationBase.intlog2(size_T))
-  x = Expr(:tuple)
-  for n in 1:N
-    push!(x.args, Expr(:call, :(>>>), Expr(:ref, :x, n), shifter))
-  end
-  quote
-    $(Expr(:meta,:inline))
-    x = A.ptr.strd
-    $x
-  end
 end
 
 @inline Base.size(A::AbstractStrideArray) = map(Int, size(A))
@@ -219,7 +218,7 @@ end
 #   end
 #   q
 # end
-@generated function _offset_ptr(ptr::AbstractStridedPointer{T,N,C,B,R}, i::Tuple{Vararg{Integer,NI}}) where {T,N,C,B,R,NI}
+@generated function _offset_ptr(p::Ptr{T}, x::Tuple{Vararg{Integer,N}}, o::Tuple{Vararg{Integer,N}}, ::Val{R}, i::Tuple{Vararg{Integer,NI}}) where {T,N,R,NI}
   N == 0 && return Expr(:block, Expr(:meta,:inline), :(pointer(ptr)))
   if N ≠ NI
     if (N > NI) & (NI ≠ 1)
@@ -229,7 +228,7 @@ end
     return Expr(:block, Expr(:meta,:inline), :(pointer(ptr) + (first(i)-1)*$(static_sizeof(T))))
   end
   sp = rank2sortperm(R)
-  q = Expr(:block, Expr(:meta,:inline), :(p = pointer(ptr)), :(o = VectorizationBase.offsets(ptr)), :(x = strides(ptr)))
+  q = Expr(:block, Expr(:meta,:inline))
   gf = GlobalRef(Core,:getfield)
   for n ∈ 1:N
     j = findfirst(==(n),sp)::Int
@@ -240,12 +239,8 @@ end
   end
   q
 end
-# @inline _offset_ptr(ptr::AbstractStridedPointer{T,N,C,B,R,X,NTuple{N,Zero}}, i::Tuple{Vararg{Integer,NI}}) where {T,N,C,B,R,NI,X} = __offset_ptr(ptr,i)
-# @inline function _offset_ptr(ptr::AbstractStridedPointer{T,N,C,B,R}, i::Tuple{Vararg{Integer,NI}}) where {T,N,C,B,R,NI}
-#   __offset_ptr(VectorizationBase.center(ptr), i)
-# end
+@inline _offset_ptr(A::AbstractStrideArray{S,D,T,N,C,B,R}, i) where {S,D,T,N,C,B,R} = _offset_ptr(pointer(A), strides(A), offsets(A), Val{R}(), i)
 
-# Base.@propagate_inbounds Base.getindex(A::AbstractStrideVector, i::Int, j::Int) = A[i]
 @inline function Base.getindex(A::PtrArray, i::Vararg{Integer})
   @boundscheck checkbounds(A, i...)
   pload(_offset_ptr(stridedpointer(A), i))
