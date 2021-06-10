@@ -95,21 +95,21 @@ function view_quote(i, K, S, D, T, N, C, B, R, X, O, zero_offsets::Bool = false)
   quote
     $(Expr(:meta,:inline))
     s = size(A)
-    x = strides(sp)
-    o = offsets(sp)
+    x = strides(A)
+    o = offsets(A)
     p = _offset_ptr(A, $inds)
-    PtrArray{$Dnew,$Cnew,$Bnew,$Rnew}(p, $x, $o, $s)
+    PtrArray{$Rnew,$Cnew,$Dnew,$Bnew}(p, $s, $x, $o)
   end
 end
 
-@generated function Base.view(A::PtrArray{S,D,T,N,C,B,R,X,O}, i::Vararg{Union{Integer,AbstractRange,Colon},K}) where {K,S,D,T,N,C,B,R,X,O}
+@generated function Base.view(A::PtrArray{R,C,D,B,S,T,N,X,O}, i::Vararg{Union{Integer,AbstractRange,Colon},K}) where {K,S,D,T,N,C,B,R,X,O}
   view_quote(i, K, S, D, T, N, C, B, R, X, O)
 end
-@generated function zview(A::PtrArray{S,D,T,N,C,B,R,X,O}, i::Vararg{Union{Integer,AbstractRange,Colon},K}) where {K,S,D,T,N,C,B,R,X,O}
+@generated function zview(A::PtrArray{R,C,D,B,S,T,N,X,O}, i::Vararg{Union{Integer,AbstractRange,Colon},K}) where {K,S,D,T,N,C,B,R,X,O}
   view_quote(i, K, S, D, T, N, C, B, R, X, O, true)
 end
 
-@inline function Base.vec(A::PtrArray{S,D,T,N,C,0}) where {S,D,T,N,C}
+@inline function Base.vec(A::PtrArray{R,C,D,0}) where {R,C,D}
   @assert all(D) "All dimensions must be dense for a vec view. Try `vec(copy(A))` instead."
   PtrArray{(true,),(1,),0,(1,)}(p, (One(),), (One(),), (static_length(A),))
 end

@@ -1,12 +1,14 @@
 module StrideArraysCore
 
-using ArrayInterface, ThreadingUtilities
-using ArrayInterface: StaticInt, Zero, One, StaticBool, True, False,
+using ArrayInterface, ThreadingUtilities, ManualMemory
+using Static: StaticInt, Zero, One, StaticBool, True, False
+using ArrayInterface: 
   OptionallyStaticUnitRange, size, strides, offsets, indices,
   static_length, static_first, static_last, axes,
   dense_dims, stride_rank, offset1, StrideIndex,
   contiguous_axis, contiguous_batch_size
-using ThreadingUtilities: load, store!
+using ManualMemory: MemoryBuffer, offsetsize, preserve_buffer, load, store!
+
 
 export PtrArray, StrideArray, StaticInt
 
